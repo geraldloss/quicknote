@@ -3,3 +3,5 @@ build/
 .qt/
 CMakeFiles/
 CMakeCache.txt
+.vscode/
+.rmv/
