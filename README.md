@@ -19,30 +19,39 @@ A simple system-wide note editor with the following features:
 ## Build Instructions
 
 1. Create a build directory and navigate into it:
-bash
+
+```
 mkdir build
 cd build
+```
 
 2. Configure the project using CMake:
-bash
+
+```
 cmake ..
+```
 
 3. Build the project:
-bash
+
+```
 make
+```
+
 The executable `quicknote` will be created in the build directory.
 
 4. Run the application:
 
-bash
+```
 ./QuickNote
+```
 
 ## Installation
 
 You can copy the `quicknote` executable to a directory in your PATH, for example:
 
-bash
+```
 sudo cp quicknote /usr/local/bin
+```
 
 ## Usage
 
