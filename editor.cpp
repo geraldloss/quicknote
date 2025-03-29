@@ -23,6 +23,13 @@
 #include <QTimer>
 #include <QSystemTrayIcon>
 #include "translations.h"
+#include <QClipboard>
+#include <QGroupBox>
+#include <QSpacerItem>
+#include <QSizePolicy>
+#include <QCryptographicHash>
+
+const QString Editor::SERVER_NAME = "QuickNoteInstance_" + QString(QCryptographicHash::hash("QuickNoteUniqueIdentifier", QCryptographicHash::Sha256).toHex());
 
 /**
  * @brief Erstellt und gibt den Pfad zum Datenverzeichnis zurück
@@ -78,6 +85,7 @@ Editor::Editor(QWidget *parent) : QMainWindow(parent), m_currentHistoryIndex(-1)
     setupShortcuts();
     setupGlobalShortcut();
     
+    // Verbinde Textänderungen mit dem Event-Handler
     connect(m_textEdit, &QTextEdit::textChanged, this, &Editor::onTextChanged);
     
     setupTrayIcon();
@@ -313,7 +321,32 @@ void Editor::loadHistory()
  */
 void Editor::onTextChanged()
 {
-    saveHistory();  // Nur noch History speichern
+    static bool isFormatting = false;
+    if (isFormatting) return;  // Vermeide rekursive Aufrufe
+
+    isFormatting = true;
+
+    saveHistory(); 
+
+    // Erstelle einen Textcursor für den gesamten Text
+    QTextCursor cursor = m_textEdit->textCursor();
+    int originalPosition = cursor.position();  // Speichere die ursprüngliche Cursor-Position
+    cursor.select(QTextCursor::Document);
+
+    // Erstelle das Standardformat
+    QTextCharFormat format;
+    format.setForeground(m_textColor);
+    format.setBackground(m_backgroundColor);
+    format.setFontPointSize(m_fontSize); 
+
+    // Wende das Format auf den gesamten Text an
+    cursor.setCharFormat(format);
+
+    // Setze den Cursor zurück an die ursprüngliche Position
+    cursor.setPosition(originalPosition);
+    m_textEdit->setTextCursor(cursor);
+
+    isFormatting = false;
 }
 
 /**
@@ -400,24 +433,35 @@ void Editor::executeUndo()
  */
 bool Editor::eventFilter(QObject *obj, QEvent *event)
 {
-        // Andere Shortcuts nur bei aktivem Fenster
-    if (obj == m_textEdit && isActiveWindow() && event->type() == QEvent::KeyPress) {
-        QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
 
-        if (keyEvent->matches(QKeySequence::Undo)) {
-            executeUndo();
-            return true;
-        }
-        else if (keyEvent->matches(QKeySequence::Redo)) {
-            executeRedo();
-            return true;
-        }
-        else if (keyEvent->modifiers() == Qt::CTRL && keyEvent->key() == Qt::Key_Y) {
-            executeRedo();
-            return true;
+    // Shortcuts nur bei aktivem Fenster
+    if (obj == m_textEdit && isActiveWindow()) {
+        if (event->type() == QEvent::KeyPress) {
+            QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
+
+            if (keyEvent->matches(QKeySequence::Undo)) {
+                executeUndo();
+                return true;
+            }
+            else if (keyEvent->matches(QKeySequence::Redo)) {
+                executeRedo();
+                return true;
+            }
+            else if (keyEvent->modifiers() == Qt::CTRL && keyEvent->key() == Qt::Key_Y) {
+                executeRedo();
+                return true;
+            }
+            else if (keyEvent->matches(QKeySequence::Copy)) {
+                onCopy();
+                return true;
+            }
+            else if (keyEvent->matches(QKeySequence::Cut)) {
+                onCut();
+                return true;
+            }
         }
     }
-    
+
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -426,6 +470,7 @@ void Editor::setupContextMenu()
     m_textEdit->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_textEdit, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
         QMenu *menu = m_textEdit->createStandardContextMenu();
+        
         menu->addSeparator();
         
         // Direkt ins Hauptmenü
@@ -458,16 +503,14 @@ void Editor::loadSettings()
     }
     QSettings settings(path + "/settings.conf", QSettings::IniFormat);
     m_maxHistorySize = settings.value("maxHistorySize", 9999).toInt();
-    m_backgroundColor = settings.value("backgroundColor", QColor(255, 250, 205)).value<QColor>();  // LemonChiffon
+    m_backgroundColor = settings.value("backgroundColor", QColor(255, 250, 205)).value<QColor>();
     m_textColor = settings.value("textColor", QColor(0, 0, 0)).value<QColor>();
     m_toggleWindowShortcut = QKeySequence(settings.value("toggleWindowShortcut").toString());
     m_language = settings.value("language", "en").toString();
+    m_fontSize = settings.value("fontSize", 11).toInt();  // Standardwert 11
     Translations::setLanguage(m_language);
     
-    // Wende Farben an
     applyColors();
-    
-    // Lade Fenstergeometrie
     QRect geometry = settings.value("windowGeometry", QRect(100, 100, 800, 600)).toRect();
     setGeometry(geometry);
 }
@@ -483,8 +526,7 @@ void Editor::saveSettings()
     settings.setValue("textColor", m_textColor);
     settings.setValue("toggleWindowShortcut", m_toggleWindowShortcut.toString());
     settings.setValue("language", m_language);
-    
-    // Speichere Fenstergeometrie
+    settings.setValue("fontSize", m_fontSize);  // Schriftgröße speichern
     settings.setValue("windowGeometry", geometry());
 }
 
@@ -494,6 +536,12 @@ void Editor::applyColors()
     p.setColor(QPalette::Base, m_backgroundColor);
     p.setColor(QPalette::Text, m_textColor);
     m_textEdit->setPalette(p);
+
+    QTextCharFormat format;
+    format.setForeground(m_textColor);
+    format.setBackground(m_backgroundColor);
+    format.setFontPointSize(m_fontSize);  // Verwende die gespeicherte Schriftgröße
+    m_textEdit->setCurrentCharFormat(format);
 }
 
 void Editor::closeEvent(QCloseEvent *event)
@@ -593,23 +641,12 @@ void Editor::setupTrayIcon()
 
 void Editor::setupSettingsMenu(QMenu* settingsMenu)
 {
-    // Haupteinstellungen
     QAction *settingsAction = settingsMenu->addAction(Translations::get("settings"));
     connect(settingsAction, &QAction::triggered, this, [this]() {
         QDialog dialog(this);
         dialog.setWindowTitle(Translations::get("settings"));
         QVBoxLayout *layout = new QVBoxLayout(&dialog);
-        
-        // History-Länge
-        QHBoxLayout *historyLayout = new QHBoxLayout();
-        QLabel *historyLabel = new QLabel(Translations::get("max_history") + ":", &dialog);
-        QSpinBox *historySpin = new QSpinBox(&dialog);
-        historySpin->setRange(1, 99999);
-        historySpin->setValue(m_maxHistorySize);
-        historyLayout->addWidget(historyLabel);
-        historyLayout->addWidget(historySpin);
-        layout->addLayout(historyLayout);
-        
+
         // Hintergrundfarbe
         QHBoxLayout *bgColorLayout = new QHBoxLayout();
         QPushButton *bgColorButton = new QPushButton(Translations::get("bg_color") + "...", &dialog);
@@ -656,18 +693,28 @@ void Editor::setupSettingsMenu(QMenu* settingsMenu)
             }
         });
         
-        // Shortcut
-        QHBoxLayout *shortcutLayout = new QHBoxLayout();
-        QLabel *shortcutLabel = new QLabel(Translations::get("shortcut") + ":", &dialog);
-        QKeySequenceEdit *shortcutEdit = new QKeySequenceEdit(&dialog);
-        shortcutEdit->setKeySequence(m_toggleWindowShortcut);
-        QPushButton *clearButton = new QPushButton(Translations::get("default_shortcut"), &dialog);
-        shortcutLayout->addWidget(shortcutLabel);
-        shortcutLayout->addWidget(shortcutEdit);
-        layout->addLayout(shortcutLayout);
-        layout->addWidget(clearButton);
-        
-        connect(clearButton, &QPushButton::clicked, shortcutEdit, &QKeySequenceEdit::clear);
+        // Schriftgröße
+        QHBoxLayout *fontSizeLayout = new QHBoxLayout();
+        QLabel *fontSizeLabel = new QLabel(Translations::get("font_size"), &dialog);  // Sprachenabhängiges Label
+        QSpinBox *fontSizeSpin = new QSpinBox(&dialog);
+        fontSizeSpin->setRange(8, 72);  // Beispielbereich für Schriftgrößen
+        fontSizeSpin->setValue(m_fontSize);
+        fontSizeLayout->addWidget(fontSizeLabel);
+        fontSizeLayout->addWidget(fontSizeSpin);
+        layout->addLayout(fontSizeLayout);
+
+        // Füge einen Abstand ein
+        layout->addSpacerItem(new QSpacerItem(20, 20, QSizePolicy::Minimum, QSizePolicy::Expanding));
+
+        // History-Länge
+        QHBoxLayout *historyLayout = new QHBoxLayout();
+        QLabel *historyLabel = new QLabel(Translations::get("max_history") + ":", &dialog);
+        QSpinBox *historySpin = new QSpinBox(&dialog);
+        historySpin->setRange(1, 99999);
+        historySpin->setValue(m_maxHistorySize);
+        historyLayout->addWidget(historyLabel);
+        historyLayout->addWidget(historySpin);
+        layout->addLayout(historyLayout);
         
         // Sprachauswahl
         QHBoxLayout *langLayout = new QHBoxLayout();
@@ -683,18 +730,40 @@ void Editor::setupSettingsMenu(QMenu* settingsMenu)
         langLayout->addWidget(langLabel);
         langLayout->addWidget(langCombo);
         layout->addLayout(langLayout);
-        
+
+        // Füge einen Abstand ein
+        layout->addSpacerItem(new QSpacerItem(20, 20, QSizePolicy::Minimum, QSizePolicy::Expanding));
+
+        // Shortcut-Einstellungen in einem Rahmen
+        QGroupBox *shortcutGroup = new QGroupBox(Translations::get("shortcut_settings"), &dialog);
+        QVBoxLayout *shortcutLayout = new QVBoxLayout(shortcutGroup);
+
+        QHBoxLayout *shortcutEditLayout = new QHBoxLayout();
+        QLabel *shortcutLabel = new QLabel(Translations::get("shortcut") + ":", &dialog);
+        QKeySequenceEdit *shortcutEdit = new QKeySequenceEdit(&dialog);
+        shortcutEdit->setKeySequence(m_toggleWindowShortcut);
+        shortcutEditLayout->addWidget(shortcutLabel);
+        shortcutEditLayout->addWidget(shortcutEdit);
+        shortcutLayout->addLayout(shortcutEditLayout);
+
+        QPushButton *clearButton = new QPushButton(Translations::get("default_shortcut"), &dialog);
+        shortcutLayout->addWidget(clearButton);
+
+        connect(clearButton, &QPushButton::clicked, shortcutEdit, &QKeySequenceEdit::clear);
+
+        layout->addWidget(shortcutGroup);
+
         // OK/Cancel Buttons
-        QDialogButtonBox *buttons = new QDialogButtonBox(
-            QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+        QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
         layout->addWidget(buttons);
-        
+
         connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
         connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-        
+
         if (dialog.exec() == QDialog::Accepted) {
             m_maxHistorySize = historySpin->value();
             m_toggleWindowShortcut = shortcutEdit->keySequence();
+            m_fontSize = fontSizeSpin->value();
             applyColors();
             saveSettings();
             setupGlobalShortcut();
@@ -709,6 +778,9 @@ void Editor::setupSettingsMenu(QMenu* settingsMenu)
                 setupContextMenu();
                 setupTrayIcon();
             }
+
+            // Rufe onTextChanged auf, um die Formatierung zu aktualisieren
+            onTextChanged();
         }
     });
     
@@ -734,7 +806,7 @@ void Editor::setupSingleInstance()
 {
     // Prüfe auf andere Instanz
     QLocalSocket socket;
-    socket.connectToServer("QuickNoteInstance");
+    socket.connectToServer(SERVER_NAME);
     
     if (socket.waitForConnected(500)) {
         socket.close();
@@ -745,8 +817,8 @@ void Editor::setupSingleInstance()
     
     // Erstelle Server für diese Instanz
     m_localServer = new QLocalServer(this);
-    QLocalServer::removeServer("QuickNoteInstance");
-    if (!m_localServer->listen("QuickNoteInstance")) {
+    QLocalServer::removeServer(SERVER_NAME);
+    if (!m_localServer->listen(SERVER_NAME)) {
         qDebug() << "Server konnte nicht gestartet werden";
         return;
     }
@@ -757,4 +829,30 @@ void Editor::setupSingleInstance()
         raise();
         activateWindow();
     });
-} 
+}
+
+// Hilfsfunktion zum Kopieren des ausgewählten Textes in die Zwischenablage
+void Editor::copySelectedTextToClipboard()
+{
+    QClipboard *clipboard = QApplication::clipboard();
+    clipboard->clear();  // Leere die Zwischenablage
+
+    QString plainText = m_textEdit->textCursor().selectedText();
+    clipboard->setText(plainText, QClipboard::Clipboard);  // Füge den reinen Text hinzu
+}
+
+void Editor::onCopy()
+{
+    qDebug() << "onCopy called";
+    copySelectedTextToClipboard();
+}
+
+void Editor::onCut()
+{
+    qDebug() << "onCut called";
+    copySelectedTextToClipboard();
+
+    // Text im Editor löschen
+    m_textEdit->textCursor().removeSelectedText();
+}
+

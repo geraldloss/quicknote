@@ -56,6 +56,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private:
+    static const QString SERVER_NAME;  // Konstante für den Servernamen
     // attributes
     QTextEdit* m_textEdit;
     QJsonArray m_history;
@@ -70,7 +71,8 @@ private:
     QHotkey* m_toggleHotkey;
     QLocalServer* m_localServer;
     QSystemTrayIcon* m_trayIcon;
-    QString m_language;  // Neue Variable für die Sprache
+    QString m_language; 
+    int m_fontSize;  
 
     // methods
     /**
@@ -126,11 +128,27 @@ private:
 
     void setupSettingsMenu(QMenu* settingsMenu);  // Neue Methode
 
+    /**
+     * @brief Kopiert den ausgewählten Text in die Zwischenablage
+     */
+    void copySelectedTextToClipboard();
+
 private slots:
     /**
      * @brief Wird aufgerufen, wenn sich der Text ändert
      */
     void onTextChanged();
+
+    /**
+     * @brief Wird aufgerufen, wenn Text kopiert wird
+     */
+    void onCopy();
+
+    /**
+     * @brief Wird aufgerufen, wenn Text ausgeschnitten wird
+     */
+    void onCut();
+
 };
 
 #endif 

@@ -44,7 +44,9 @@ const QMap<QString, QString> Translations::englishTranslations = {
     {"french", "Français"},
     {"spanish", "Español"},
     {"italian", "Italiano"},
-    {"chinese", "中文"}
+    {"chinese", "中文"},
+    {"font_size", "Font Size"},
+    {"shortcut_settings", "Shortcut Settings"}
 };
 
 const QMap<QString, QString> Translations::germanTranslations = {
@@ -64,7 +66,9 @@ const QMap<QString, QString> Translations::germanTranslations = {
     {"french", "Français"},
     {"spanish", "Español"},
     {"italian", "Italiano"},
-    {"chinese", "中文"}
+    {"chinese", "中文"},
+    {"font_size", "Schriftgröße"},
+    {"shortcut_settings", "Shortcut Einstellungen"}
 };
 
 const QMap<QString, QString> Translations::frenchTranslations = {
@@ -84,7 +88,9 @@ const QMap<QString, QString> Translations::frenchTranslations = {
     {"french", "Français"},
     {"spanish", "Español"},
     {"italian", "Italiano"},
-    {"chinese", "中文"}
+    {"chinese", "中文"},
+    {"font_size", "Taille de police"},
+    {"shortcut_settings", "Paramètres de raccourci"}
 };
 
 const QMap<QString, QString> Translations::spanishTranslations = {
@@ -104,7 +110,9 @@ const QMap<QString, QString> Translations::spanishTranslations = {
     {"french", "Français"},
     {"spanish", "Español"},
     {"italian", "Italiano"},
-    {"chinese", "中文"}
+    {"chinese", "中文"},
+    {"font_size", "Tamaño de fuente"},
+    {"shortcut_settings", "Configuración de atajos"}
 };
 
 const QMap<QString, QString> Translations::italianTranslations = {
@@ -124,7 +132,9 @@ const QMap<QString, QString> Translations::italianTranslations = {
     {"french", "Français"},
     {"spanish", "Español"},
     {"italian", "Italiano"},
-    {"chinese", "中文"}
+    {"chinese", "中文"},
+    {"font_size", "Dimensione del carattere"},
+    {"shortcut_settings", "Impostazioni scorciatoie"}
 };
 
 const QMap<QString, QString> Translations::chineseTranslations = {
@@ -144,5 +154,7 @@ const QMap<QString, QString> Translations::chineseTranslations = {
     {"french", "Français"},
     {"spanish", "Español"},
     {"italian", "Italiano"},
-    {"chinese", "中文"}
+    {"chinese", "中文"},
+    {"font_size", "字体大小"},
+    {"shortcut_settings", "快捷键设置"}
 }; 
