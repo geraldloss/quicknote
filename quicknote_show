@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#
+
+QUICKNOTE_BIN="/usr/local/bin/quicknote"  # adjust path to your own needs
+
+"$QUICKNOTE_BIN" &

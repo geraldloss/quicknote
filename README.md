@@ -69,3 +69,8 @@ All data will be saved in the user's home directory in the `~/.local/share/quick
 Press right mouse button to enter the settings menu.
 
 All settings are saved in the `~/.config/quicknote/settings.conf` file.
+
+
+## Wayland caveats
+
+In Wayland the global shortcut registration ist not working. You have to edit the bash script quicknote_show and put it in a folder like /usr/local/bin. Afte you need to go to KDE Settings->keyboard->shortcuts. There you have to assign a global shortcut to quicknote_show.
