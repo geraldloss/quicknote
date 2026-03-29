@@ -73,4 +73,4 @@ All settings are saved in the `~/.config/quicknote/settings.conf` file.
 
 ## Wayland caveats
 
-In Wayland the global shortcut registration ist not working. You have to edit the bash script quicknote_show and put it in a folder like /usr/local/bin. Afte you need to go to KDE Settings->keyboard->shortcuts. There you have to assign a global shortcut to quicknote_show.
+In Wayland the global shortcut registration ist not working. You have to edit the bash script quicknote_show and put it in a folder like /usr/local/bin. Then you need to go to KDE Settings->keyboard->shortcuts. There you have to assign a global shortcut to quicknote_show.
