@@ -69,6 +69,7 @@ private:
     QColor m_textColor;
     QKeySequence m_toggleWindowShortcut;
     QHotkey* m_toggleHotkey;
+    QShortcut* m_toggleShortcutFallback;
     QLocalServer* m_localServer;
     QSystemTrayIcon* m_trayIcon;
     QString m_language; 

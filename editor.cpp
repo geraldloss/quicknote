@@ -17,6 +17,13 @@
 #include <QDialogButtonBox>
 #include <QShortcut>
 #include <QApplication>
+#include <QGuiApplication>
+#include <QDateTime>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+#include <QtGui/qguiapplication_platform.h>
+#else
+#include <QX11Info>
+#endif
 #include "qhotkey.h"
 #include <QLocalServer>
 #include <QLocalSocket>
@@ -30,6 +37,27 @@
 #include <QCryptographicHash>
 
 const QString Editor::SERVER_NAME = "QuickNoteInstance_" + QString(QCryptographicHash::hash("QuickNoteUniqueIdentifier", QCryptographicHash::Sha256).toHex());
+
+namespace {
+// #region agent log
+void agentDebugLog(const char *hypothesisId, const char *location, const char *message, const QJsonObject &data)
+{
+    QJsonObject o;
+    o["sessionId"] = QStringLiteral("c8d889");
+    o["runId"] = QStringLiteral("pre-fix");
+    o["hypothesisId"] = QString::fromUtf8(hypothesisId);
+    o["location"] = QString::fromUtf8(location);
+    o["message"] = QString::fromUtf8(message);
+    o["data"] = data;
+    o["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    QFile f(QStringLiteral("/home/gerald/Workspace/quicknote/.cursor/debug-c8d889.log"));
+    if (f.open(QIODevice::WriteOnly | QIODevice::Append)) {
+        f.write(QJsonDocument(o).toJson(QJsonDocument::Compact));
+        f.write("\n");
+    }
+}
+// #endregion
+} // namespace
 
 /**
  * @brief Erstellt und gibt den Pfad zum Datenverzeichnis zurück
@@ -57,7 +85,7 @@ QString Editor::getHistoryFile() const
  * @brief Konstruktor - Initialisiert den Editor und seine Komponenten
  * @param parent Das übergeordnete Widget
  */
-Editor::Editor(QWidget *parent) : QMainWindow(parent), m_currentHistoryIndex(-1), m_deactivateHistoryEvent(false), m_toggleHotkey(nullptr), m_localServer(nullptr), m_dontSaveSettings(false), m_trayIcon(nullptr)
+Editor::Editor(QWidget *parent) : QMainWindow(parent), m_currentHistoryIndex(-1), m_deactivateHistoryEvent(false), m_toggleHotkey(nullptr), m_toggleShortcutFallback(nullptr), m_localServer(nullptr), m_dontSaveSettings(false), m_trayIcon(nullptr)
 {
     setupSingleInstance();
     if (m_localServer == nullptr) return;  // Beende wenn andere Instanz läuft
@@ -555,6 +583,11 @@ void Editor::setupGlobalShortcut()
 {
     if (m_toggleHotkey) {
         delete m_toggleHotkey;
+        m_toggleHotkey = nullptr;
+    }
+    if (m_toggleShortcutFallback) {
+        delete m_toggleShortcutFallback;
+        m_toggleShortcutFallback = nullptr;
     }
     
     // Verwende Rollen-Taste als Standard
@@ -565,13 +598,29 @@ void Editor::setupGlobalShortcut()
     } else {
         shortcut = m_toggleWindowShortcut;
     }
-    
-    m_toggleHotkey = new QHotkey(shortcut, true, this);
-    if (!m_toggleHotkey->isRegistered()) {
-        qDebug() << "Hotkey konnte nicht registriert werden:" << shortcut.toString();
+
+    // #region agent log
+    {
+        QJsonObject d;
+        d["platformName"] = QGuiApplication::platformName();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+        const void *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
+        d["x11NativeInterfaceNull"] = (x11 == nullptr);
+#else
+        d["x11NativeInterfaceNull"] = !QX11Info::isPlatformX11();
+#endif
+        d["scrollLockKeyEnum"] = 65300;
+        agentDebugLog("H1", "editor.cpp:setupGlobalShortcut", "platform before hotkey", d);
     }
-    
-    connect(m_toggleHotkey, &QHotkey::activated, this, [this]() {
+    // #endregion
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+    const bool canUseGlobalHotkey = (qGuiApp->nativeInterface<QNativeInterface::QX11Application>() != nullptr);
+#else
+    const bool canUseGlobalHotkey = QX11Info::isPlatformX11();
+#endif
+
+    const auto onToggle = [this]() {
         if (isVisible()) {
             hide();
         } else {
@@ -579,7 +628,35 @@ void Editor::setupGlobalShortcut()
             raise();
             activateWindow();
         }
-    });
+    };
+
+    if (canUseGlobalHotkey) {
+        // #region agent log
+        {
+            QJsonObject d;
+            d["path"] = QStringLiteral("QHotkey");
+            agentDebugLog("H1", "editor.cpp:setupGlobalShortcut", "branch", d);
+        }
+        // #endregion
+        m_toggleHotkey = new QHotkey(shortcut, true, this);
+        if (!m_toggleHotkey->isRegistered()) {
+            qDebug() << "Hotkey konnte nicht registriert werden:" << shortcut.toString();
+        }
+        connect(m_toggleHotkey, &QHotkey::activated, this, onToggle);
+    } else {
+        // #region agent log
+        {
+            QJsonObject d;
+            d["path"] = QStringLiteral("QShortcut_fallback");
+            agentDebugLog("H1", "editor.cpp:setupGlobalShortcut", "branch", d);
+        }
+        // #endregion
+        qWarning() << "Globaler Hotkey (QHotkey) ist nur unter X11 (Qt xcb) verfügbar. Aktuelle Plattform:"
+                   << QGuiApplication::platformName()
+                   << "— Fallback: Kurzbefehl nur wenn die App fokussiert ist. Oder starten mit QT_QPA_PLATFORM=xcb (XWayland).";
+        m_toggleShortcutFallback = new QShortcut(shortcut, this, nullptr, nullptr, Qt::ApplicationShortcut);
+        connect(m_toggleShortcutFallback, &QShortcut::activated, this, onToggle);
+    }
 }
 
 void Editor::saveHistoryIndex()
@@ -804,31 +881,52 @@ void Editor::setupSettingsMenu(QMenu* settingsMenu)
 
 void Editor::setupSingleInstance()
 {
-    // Prüfe auf andere Instanz
-    QLocalSocket socket;
-    socket.connectToServer(SERVER_NAME);
-    
-    if (socket.waitForConnected(500)) {
-        socket.close();
-        m_dontSaveSettings = true;
-        QTimer::singleShot(0, []() { QCoreApplication::exit(0); });
-        return;
-    }
-    
-    // Erstelle Server für diese Instanz
-    m_localServer = new QLocalServer(this);
-    QLocalServer::removeServer(SERVER_NAME);
-    if (!m_localServer->listen(SERVER_NAME)) {
-        qDebug() << "Server konnte nicht gestartet werden";
-        return;
-    }
-    
-    // Wenn sich eine neue Instanz verbindet, zeige das Fenster
-    connect(m_localServer, &QLocalServer::newConnection, this, [this]() {
-        show();
-        raise();
-        activateWindow();
-    });
+     // Prüfe auf andere Instanz und sende "toggle"
+     QLocalSocket socket;
+     socket.connectToServer(SERVER_NAME);
+     
+     if (socket.waitForConnected(500)) {
+         socket.write("toggle");
+         socket.flush();
+         socket.waitForBytesWritten(500);
+         socket.close();
+         m_dontSaveSettings = true;
+         QTimer::singleShot(0, []() { QCoreApplication::exit(0); });
+         return;
+     }
+     
+     // Erstelle Server für diese Instanz
+     m_localServer = new QLocalServer(this);
+     QLocalServer::removeServer(SERVER_NAME);
+     if (!m_localServer->listen(SERVER_NAME)) {
+         qDebug() << "Server konnte nicht gestartet werden";
+         return;
+     }
+     
+     // Eingehende Verbindungen verarbeiten
+     connect(m_localServer, &QLocalServer::newConnection, this, [this]() {
+         QLocalSocket *client = m_localServer->nextPendingConnection();
+         connect(client, &QLocalSocket::readyRead, this, [this, client]() {
+             QByteArray msg = client->readAll();
+             client->close();
+             client->deleteLater();
+ 
+             if (msg == "toggle") {
+                 if (isVisible()) {
+                     hide();
+                 } else {
+                     show();
+                     raise();
+                     activateWindow();
+                 }
+             } else {
+                 // Fallback: immer anzeigen (altes Verhalten)
+                 show();
+                 raise();
+                 activateWindow();
+             }
+         });
+     });
 }
 
 // Hilfsfunktion zum Kopieren des ausgewählten Textes in die Zwischenablage
